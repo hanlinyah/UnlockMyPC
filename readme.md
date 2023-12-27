@@ -1,8 +1,13 @@
 # 使用裝置解鎖電腦  
-<video src="video/VID_20231227_071830_compress.mp4"  controls title="裝置解所展示影片" ></video>
-![20231227更新版](images/image-32.png) 
 
+https://github.com/hanlinyah/UnlockMyPC/assets/88433897/fe3ad314-f02b-4d20-9e05-75a267dfc4c1
+
+![20231227更新版](images/image-32.png) 
 ---
+
+
+
+
 
 #### 更新歷程
 
