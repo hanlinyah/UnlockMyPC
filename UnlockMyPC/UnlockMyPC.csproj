@@ -153,11 +153,18 @@
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">
       <Version>6.2.14</Version>
     </PackageReference>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>13.0.3</Version>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\BackGroundTask\BackGroundTask.csproj">
       <Project>{ea396db9-13a6-414a-b282-100b68ea56cd}</Project>
       <Name>BackGroundTask</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\UnLockMyPCLib\UnLockMyPCLib.csproj">
+      <Project>{1b15d169-602a-43fd-9a30-11f9f3374f0e}</Project>
+      <Name>UnLockMyPCLib</Name>
     </ProjectReference>
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">

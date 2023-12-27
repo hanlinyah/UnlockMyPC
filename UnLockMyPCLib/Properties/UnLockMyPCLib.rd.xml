@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    這個檔案包含執行階段指示詞、應用程式透過反射和其他動態程式碼模式所存取的類型相關規格。
+    執行階段指示詞的用途是控制
+    .NET Native 最佳化程式，以及確認未移除程式庫所存取的程式碼。如果您的程式庫
+    未執行任何反射，您通常就不需要編輯這個檔案。不過，
+    如果您的程式庫透過類型 (尤其是傳遞給它或衍生自其類型的類型) 進行反射，
+    您就應該撰寫執行階段指示詞。
+
+    程式庫中的最常用反射是探索傳遞給程式庫的類型相關資訊。
+    執行階段指示詞能用三種方式表達傳遞給程式庫的類型
+    需求。
+
+    1.  Parameter、GenericParameter、TypeParameter、TypeEnumerableParameter
+        使用這些指示詞透過傳遞為參數的類型進行反射。
+
+    2.  SubTypes
+        使用 SubTypes 指示詞透過衍生自另一種類型的類型進行反射。
+
+    3.  AttributeImplies
+        使用 AttributeImplies 指示詞指出程式庫需要透過
+        利用屬性所裝飾的類型或方法進行反射。
+
+    如需為程式庫撰寫執行階段指示詞的詳細資訊，請前往
+    https://go.microsoft.com/fwlink/?LinkID=391919
+-->
+<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
+  <Library Name="UnLockMyPCLib">
+
+  	<!-- 請在這裡新增程式庫的指示詞 -->
+
+  </Library>
+</Directives>

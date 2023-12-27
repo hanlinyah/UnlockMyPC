@@ -1,27 +1,31 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Data.Common;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
 using Windows.ApplicationModel.Background;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
+using Windows.Devices.Usb;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.Security.Authentication.Identity.Provider;
 using Windows.Security.Cryptography;
+using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.UI;
 using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
-using Windows.UI.Xaml.Navigation;
+using Newtonsoft.Json;
+using UnLockMyPCLib;
 
 // 空白頁項目範本已記錄在 https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x404
 
@@ -32,36 +36,193 @@ namespace UnlockMyPC
     /// </summary>
     public sealed partial class MainPage : Page
     {
-        String m_selectedDeviceId = String.Empty;
+        ApplicationDataContainer localSettings = Windows.Storage.ApplicationData.Current.LocalSettings;
         bool taskRegistered = false;
         static string myBGTaskName = "UnlockMyPC";
         static string myBGTaskEntryPoint = "BackGroundTask.UnlockPCTask";
+        ObservableCollection<UnLockType> unLockTypes = new ObservableCollection<UnLockType>();
         public MainPage()
         {
             this.InitializeComponent();
-            RegDeviceList.SelectionChanged += RegDeviceList_SelectionChanged;
+            if (localSettings.Values["UnLockDeviceData"]==null) {
+                string json = JsonConvert.SerializeObject(new UnLockDeviceData());
+                localSettings.Values["UnLockDeviceData"] = json;
+            }
+            UnLockTypesSwitch.SelectionChanged += UnLockTypesSwitch_SelectionChanged;
             RefreshDeviceList();
             RefreshServiceRegStatus();
         }
 
-        private async void RegButton_Click(object sender, RoutedEventArgs e)
+        private void RefreshUnlokTypesList(ObservableCollection<UnLockType> unLockTypes)
         {
+            unLockTypes.Clear();
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+            if (!unLockDeviceData.BlueToothDevice.isBinding && !unLockDeviceData.USBDevice.isBinding)
+            {
+                unLockTypes.Add(new UnLockType(UnLockTypeCode.None));
+            }
+            if (unLockDeviceData.BlueToothDevice.isBinding) { 
+                unLockTypes.Add(new UnLockType(UnLockTypeCode.BlueTooth));
+            }
+            if (unLockDeviceData.USBDevice.isBinding) { 
+                unLockTypes.Add(new UnLockType(UnLockTypeCode.Usb));
+            }
+            if (unLockDeviceData.BlueToothDevice.isBinding && unLockDeviceData.USBDevice.isBinding) {
+                unLockTypes.Add(new UnLockType(UnLockTypeCode.BlueToothOrUsb));
+                unLockTypes.Add(new UnLockType(UnLockTypeCode.BlueToothAndUsb));
+            }
+            RefreshUnLockTypesSwitchStatus();
+        }
+
+
+        async void RefreshDeviceList()
+        {
+            IReadOnlyList<SecondaryAuthenticationFactorInfo> deviceList = await SecondaryAuthenticationFactorRegistration.FindAllRegisteredDeviceInfoAsync(
+                SecondaryAuthenticationFactorDeviceFindScope.AllUsers);
+
+            RegBlueToothDeviceList.Items.Clear();
+            RegUSBDeviceList.Items.Clear();
+
+            for (int index = 0; index < deviceList.Count; ++index)
+            {
+                SecondaryAuthenticationFactorInfo deviceInfo = deviceList.ElementAt(index);
+
+                Object value = localSettings.Values["UnLockDeviceData"];
+                UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+
+                if (unLockDeviceData.BlueToothDevice.isBinding) {
+                    if (deviceInfo.DeviceId.Equals(unLockDeviceData.BlueToothDevice.GUID)) {
+                        RegBlueToothDeviceList.Items.Add(deviceInfo.DeviceFriendlyName);
+                    }
+                }
+                if (unLockDeviceData.USBDevice.isBinding) {
+                    if (deviceInfo.DeviceId.Equals(unLockDeviceData.USBDevice.GUID))
+                    {
+                        RegUSBDeviceList.Items.Add(deviceInfo.DeviceFriendlyName);
+                    }
+                }
+            }
+            RefreshUnlokTypesList(unLockTypes);
+        }
+       
+        private void RefreshUnLockTypesSwitchStatus()
+        {
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+            int matchCount = 0;
+            foreach (UnLockType unit in unLockTypes)
+            {
+                if (unit.TypeCode == unLockDeviceData.unLockTypeCode)
+                {
+                    UnLockTypesSwitch.SelectedItem = unit;
+                    matchCount = 1;
+                }
+            }
+            if (matchCount==0) {
+                UnLockTypesSwitch.SelectedIndex = 0;
+            }
+
+        }
+        void RefreshServiceRegStatus()
+        {
+            foreach (var task in BackgroundTaskRegistration.AllTasks)
+            {
+                if (task.Value.Name == myBGTaskName)
+                {
+                    taskRegistered = true;
+                }
+            }
+            RegBGServiceButton.IsEnabled = !taskRegistered;
+            UnRegBGServiceButton.IsEnabled = taskRegistered;
+            if (taskRegistered)
+            {
+                RegBGServiceStatus.Text = "已啟用";
+                RegBGServiceStatus.Foreground = new SolidColorBrush(Colors.Green);
+            }
+            else {
+                RegBGServiceStatus.Text = "未啟用";
+                RegBGServiceStatus.Foreground = new SolidColorBrush(Colors.Red);
+            }
+        }
+
+        
+        private void UnLockTypesSwitch_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (UnLockTypesSwitch.SelectedItem != null) {
+                Object value = localSettings.Values["UnLockDeviceData"];
+                UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+                UnLockType selectedUnLockType = (UnLockType)UnLockTypesSwitch.SelectedItem;
+                unLockDeviceData.unLockTypeCode = selectedUnLockType.TypeCode;
+                unLockDeviceData.RefreshUnLockType();
+                string json = JsonConvert.SerializeObject(unLockDeviceData);
+                localSettings.Values["UnLockDeviceData"] = json;
+                RefreshUnLockTypesSwitchStatus();
+            }
+        }
+        private async void RegBlueToothButton_Click(object sender, RoutedEventArgs e)
+        {
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString()); ;
+            if (unLockDeviceData.BlueToothDevice.isBinding)
+            {
+                var messageDialog = new MessageDialog("僅能綁定一個裝置，請先解除已綁定裝置");
+                await messageDialog.ShowAsync();
+                return;
+            }
             DevicePicker picker = new DevicePicker();
+            picker.Filter.SupportedDeviceSelectors.Add(
+                    BluetoothDevice.GetDeviceSelectorFromPairingState(false)
+                );
             picker.Filter.SupportedDeviceSelectors.Add(
                     BluetoothDevice.GetDeviceSelectorFromPairingState(true)
                 );
-            Debug.WriteLine("before Reg");
             DeviceInformation device = await picker.PickSingleDeviceAsync(new Rect());
             if (device != null)
             {
-                Debug.WriteLine("device:" + device.Name);
-
-                DeviceRegistration(device);
+                if (!device.Pairing.IsPaired)
+                {
+                    DevicePairingResult dpr = await device.Pairing.PairAsync();
+                    if (dpr.Status != DevicePairingResultStatus.Paired)
+                    {
+                        return;
+                    }
+                }
+                picker.SetDisplayStatus(device,
+                    "Device.Id:" + device.Id 
+                    , DevicePickerDisplayStatusOptions.None);
+                DeviceRegistration(device, UnLockTypeCode.BlueTooth);
             }
-            Debug.WriteLine("after Reg");
         }
-        public async void DeviceRegistration(DeviceInformation device)
+        
+        private async void RegUSBButton_Click(object sender, RoutedEventArgs e)
         {
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+            if (unLockDeviceData.USBDevice.isBinding)
+            {
+                var messageDialog = new MessageDialog("僅能綁定一個裝置，請先解除已綁定裝置");
+                await messageDialog.ShowAsync();
+                return;
+            }
+            DevicePicker picker = new DevicePicker();
+            picker.Filter.SupportedDeviceSelectors.Add("System.Devices.DeviceInstanceId:~=USB\\VID  AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True");
+            DeviceInformation device = await picker.PickSingleDeviceAsync(new Rect());
+            
+            if (device != null)
+            {
+                picker.SetDisplayStatus(device,
+                    "Device.Id:" + device.Id + "\n" +
+                    "Devices.ContainerId:" + device.Properties["System.Devices.ContainerId"] + "\n"
+                    , DevicePickerDisplayStatusOptions.None);
+                DeviceRegistration(device, UnLockTypeCode.Usb);
+            }
+        }
+        
+        public async void DeviceRegistration(DeviceInformation device, UnLockTypeCode unLockType)
+        {
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
 
             IBuffer deviceKey = CryptographicBuffer.GenerateRandom(32);
             IBuffer authKey = CryptographicBuffer.GenerateRandom(32);
@@ -84,18 +245,24 @@ namespace UnlockMyPC
             }
 
             IBuffer deviceConfigData = CryptographicBuffer.CreateFromByteArray(combinedDataArray);
-
-
-            String deviceId = device.Id.Replace("Bluetooth#Bluetooth", "");
+            String deviceId = "";
             String deviceName = device.Name;
-
-
-
-            Debug.WriteLine("Device Id:" + deviceId);
-            Debug.WriteLine("Device Name:" + deviceName);
-            Debug.WriteLine("deviceKey:" + CryptographicBuffer.EncodeToHexString(deviceKey));
-            Debug.WriteLine("authKey:" + CryptographicBuffer.EncodeToHexString(authKey));
-            SecondaryAuthenticationFactorRegistrationResult registrationResult =
+            if (unLockType == UnLockTypeCode.BlueTooth)
+            {
+                deviceId = unLockDeviceData.BlueToothDevice.newGUID();
+                unLockDeviceData.BlueToothDevice.DeviceId = device.Id;
+                unLockDeviceData.BlueToothDevice.isBinding = true;
+            }
+            else
+            {
+                deviceId = unLockDeviceData.USBDevice.newGUID();
+                unLockDeviceData.USBDevice.DeviceId = device.Id;
+                unLockDeviceData.USBDevice.ContainerId = device.Properties["System.Devices.ContainerId"].ToString();
+                unLockDeviceData.USBDevice.isBinding = true;
+            }
+            try
+            {
+                SecondaryAuthenticationFactorRegistrationResult registrationResult =
                 await SecondaryAuthenticationFactorRegistration.RequestStartRegisteringDeviceAsync(
                 deviceId,
                 SecondaryAuthenticationFactorDeviceCapabilities.SupportSecureUserPresenceCheck,
@@ -103,112 +270,103 @@ namespace UnlockMyPC
                 "MyDevice",
                 deviceKey,
                 authKey);
-
-            if (registrationResult.Status != SecondaryAuthenticationFactorRegistrationStatus.Started)
-            {
-                MessageDialog myDlg = null;
-
-                if (registrationResult.Status == SecondaryAuthenticationFactorRegistrationStatus.DisabledByPolicy)
+                if (registrationResult.Status != SecondaryAuthenticationFactorRegistrationStatus.Started)
                 {
-                    //For DisaledByPolicy Exception:Ensure secondary auth is enabled.
-                    //Use GPEdit.msc to update group policy to allow secondary auth
-                    //Local Computer Policy\Computer Configuration\Administrative Templates\Windows Components\Microsoft Secondary Authentication Factor\Allow Companion device for secondary authentication
-                    myDlg = new MessageDialog("Disabled by Policy.  Please update the policy and try again.");
-                }
+                    MessageDialog myDlg = null;
 
-                if (registrationResult.Status == SecondaryAuthenticationFactorRegistrationStatus.PinSetupRequired)
-                {
-                    //For PinSetupRequired Exception:Ensure PIN is setup on the device
-                    //Either use gpedit.msc or set reg key
-                    //This setting can be enabled by creating the AllowDomainPINLogon REG_DWORD value under the HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System Registry key and setting it to 1.
-                    myDlg = new MessageDialog("Please setup PIN for your device and try again.");
-                }
+                    if (registrationResult.Status == SecondaryAuthenticationFactorRegistrationStatus.DisabledByPolicy)
+                    {
+                        //For DisaledByPolicy Exception:Ensure secondary auth is enabled.
+                        //Use GPEdit.msc to update group policy to allow secondary auth
+                        //Local Computer Policy\Computer Configuration\Administrative Templates\Windows Components\Microsoft Secondary Authentication Factor\Allow Companion device for secondary authentication
+                        myDlg = new MessageDialog("Disabled by Policy.  Please update the policy and try again.");
+                    }
 
-                if (myDlg != null)
-                {
-                    await myDlg.ShowAsync();
-                    return;
+                    if (registrationResult.Status == SecondaryAuthenticationFactorRegistrationStatus.PinSetupRequired)
+                    {
+                        //For PinSetupRequired Exception:Ensure PIN is setup on the device
+                        //Either use gpedit.msc or set reg key
+                        //This setting can be enabled by creating the AllowDomainPINLogon REG_DWORD value under the HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System Registry key and setting it to 1.
+                        myDlg = new MessageDialog("Please setup PIN for your device and try again.");
+                    }
+
+                    if (myDlg != null)
+                    {
+                        await myDlg.ShowAsync();
+                        return;
+                    }
                 }
+                await registrationResult.Registration.FinishRegisteringDeviceAsync(deviceConfigData);
+                string json = JsonConvert.SerializeObject(unLockDeviceData);
+                localSettings.Values["UnLockDeviceData"] = json;
+                RefreshDeviceList();
             }
-            System.Diagnostics.Debug.WriteLine("Device Registration Started!");
-            await registrationResult.Registration.FinishRegisteringDeviceAsync(deviceConfigData);
-
-            RegDeviceList.Items.Add(deviceId);
-            System.Diagnostics.Debug.WriteLine("Device Registration is Complete!");
-
-            IReadOnlyList<SecondaryAuthenticationFactorInfo> deviceList = await SecondaryAuthenticationFactorRegistration.FindAllRegisteredDeviceInfoAsync(
-                SecondaryAuthenticationFactorDeviceFindScope.AllUsers);
-            for (int index = 0; index < deviceList.Count; ++index)
-            {
-                SecondaryAuthenticationFactorInfo deviceInfo = deviceList.ElementAt(index);
-                Debug.WriteLine("  >>>> deviceInfo[" + index + "]:" + deviceInfo.DeviceFriendlyName);
-                Debug.WriteLine("  >>>> DeviceId[" + index + "]:" + deviceInfo.DeviceId);
-            }
-            RefreshDeviceList();
-        }
-        async void RefreshDeviceList()
-        {
-            IReadOnlyList<SecondaryAuthenticationFactorInfo> deviceList = await SecondaryAuthenticationFactorRegistration.FindAllRegisteredDeviceInfoAsync(
-                SecondaryAuthenticationFactorDeviceFindScope.AllUsers);
-
-            RegDeviceList.Items.Clear();
-
-            for (int index = 0; index < deviceList.Count; ++index)
-            {
-                SecondaryAuthenticationFactorInfo deviceInfo = deviceList.ElementAt(index);
-                Debug.WriteLine("  >>>> deviceInfo[" + index + "]:" + deviceInfo.DeviceFriendlyName);
-                Debug.WriteLine("  >>>> DeviceId[" + index + "]:" + deviceInfo.DeviceId);
-                RegDeviceList.Items.Add(deviceInfo.DeviceId);
+            catch (Exception e) {
+                Debug.WriteLine("Exception:"+e.StackTrace);
             }
         }
-        async void RefreshServiceRegStatus()
+        private void UnRegBlueToothButton_Click(object sender, RoutedEventArgs e)
         {
-            foreach (var task in BackgroundTaskRegistration.AllTasks)
+            if (RegBlueToothDeviceList.Items.Count > 0)
             {
-                if (task.Value.Name == myBGTaskName)
-                {
-                    taskRegistered = true;
-                }
+                DeviceUnRegistration(UnLockTypeCode.BlueTooth);
             }
-            RegBGServiceButton.IsEnabled = !taskRegistered;
-            UnRegBGServiceButton.IsEnabled = taskRegistered;
-            if (taskRegistered)
+        }
+        private void UnRegUSBButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (RegUSBDeviceList.Items.Count > 0)
             {
-                RegBGServiceStatus.Text = "已啟用";
-                RegBGServiceStatus.Foreground = new SolidColorBrush(Colors.Green);
+                DeviceUnRegistration(UnLockTypeCode.Usb);
+            }
+        }
+
+        private async void DeviceUnRegistration(UnLockTypeCode unLockType)
+        {
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+            DeviceInformation device;
+            String deviceId = "";
+            if (unLockType==UnLockTypeCode.BlueTooth) {
+                deviceId = unLockDeviceData.BlueToothDevice.GUID;
+                device = await DeviceInformation.CreateFromIdAsync(unLockDeviceData.BlueToothDevice.DeviceId);
+                unLockDeviceData.BlueToothDevice.isBinding = false;
+                if (device.Pairing.IsPaired)
+                {
+                    await device.Pairing.UnpairAsync();
+                }
             }
             else {
-                RegBGServiceStatus.Text = "未啟用";
-                RegBGServiceStatus.Foreground = new SolidColorBrush(Colors.Red);
+                deviceId = unLockDeviceData.USBDevice.GUID;
+                device = await DeviceInformation.CreateFromIdAsync(unLockDeviceData.USBDevice.DeviceId);
+                unLockDeviceData.USBDevice.isBinding = false;
             }
-        }
-        private void RegDeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (RegDeviceList.Items.Count > 0)
-            {
-                m_selectedDeviceId = RegDeviceList.SelectedItem.ToString();
-            }
-            else
-            {
-                m_selectedDeviceId = String.Empty;
-            }
-            System.Diagnostics.Debug.WriteLine("The device " + m_selectedDeviceId + " is selected.");
-
-            var localSettings = Windows.Storage.ApplicationData.Current.LocalSettings;
-            localSettings.Values["SelectedDevice"] = m_selectedDeviceId;
-
-        }
-
-        private async void UnRegButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (m_selectedDeviceId == String.Empty)
-            {
-                return;
-            }
-
-            await SecondaryAuthenticationFactorRegistration.UnregisterDeviceAsync(m_selectedDeviceId);
-
+            unLockDeviceData.RefreshUnLockType();
+            await SecondaryAuthenticationFactorRegistration.UnregisterDeviceAsync(deviceId);
+            string json = JsonConvert.SerializeObject(unLockDeviceData);
+            localSettings.Values["UnLockDeviceData"] = json;
             RefreshDeviceList();
+            if (!unLockDeviceData.BlueToothDevice.isBinding && !unLockDeviceData.USBDevice.isBinding) {
+                UnRegBGService();
+            }
+        }
+
+        
+        private async void RePairingButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (RegBlueToothDeviceList.Items.Count > 0)
+            {
+                Object value = localSettings.Values["UnLockDeviceData"];
+                UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+                DeviceInformation device = await DeviceInformation.CreateFromIdAsync(unLockDeviceData.BlueToothDevice.DeviceId);
+                if (device.Pairing.IsPaired)
+                {
+                    await device.Pairing.UnpairAsync();
+                    await device.Pairing.PairAsync();
+                }
+                else {
+                    await device.Pairing.PairAsync();
+                }
+            }
         }
 
         private void RegBGServiceButton_Click(object sender, RoutedEventArgs e)
@@ -278,4 +436,5 @@ namespace UnlockMyPC
             RefreshServiceRegStatus();
         }
     }
+    
 }

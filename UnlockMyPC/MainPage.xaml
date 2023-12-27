@@ -9,13 +9,20 @@
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"  Height="500" Width="500" >
 
     <Grid HorizontalAlignment="Left" VerticalAlignment="Top">
-        <ListBox x:Name="RegDeviceList" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Top" Height="277" Margin="0,43,0,0"/>
-        <TextBlock HorizontalAlignment="Left" TextWrapping="Wrap" Text="已綁定裝置：" Width="201" FontSize="30" VerticalAlignment="Top" Margin="1,0,0,0"/>
-        <Button Content="綁定裝置" FontSize="30" Width="150" Click="RegButton_Click" Height="60" VerticalAlignment="Top" Margin="195,325,0,0"/>
-        <Button Content="移除綁定"  FontSize="30" Width="150" Click="UnRegButton_Click" Height="60" VerticalAlignment="Top" Margin="350,325,0,0"/>
-        <Button Name="RegBGServiceButton" IsEnabled="True" Content="啟用服務" VerticalAlignment="Top" FontSize="30" Width="150" Click="RegBGServiceButton_Click" Height="60" Margin="195,438,0,0"/>
-        <Button Name="UnRegBGServiceButton" IsEnabled="True" Content="解除服務" VerticalAlignment="Top" FontSize="30" Width="150" Click="UnRegBGServiceButton_Click" Height="60" Margin="350,438,0,0"/>
-        <TextBlock TextWrapping="Wrap" Text="啟用狀態：" Width="159" FontSize="30" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,393,0,0"/>
-        <TextBlock Name="RegBGServiceStatus" TextWrapping="Wrap" Text="未啟用" Width="120" FontSize="30" Height="40" Foreground="Red" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="160,393,0,0"/>
+        <ListBox x:Name="RegBlueToothDeviceList" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Top" Height="60" Margin="0,43,0,0"/>
+        <TextBlock HorizontalAlignment="Left" TextWrapping="Wrap" Text="已綁定藍芽解鎖裝置：" Width="400" FontSize="30" VerticalAlignment="Top" Margin="1,0,0,0"/>
+        <Button Content="綁定裝置" FontSize="30" Width="150" Click="RegBlueToothButton_Click" Height="60" VerticalAlignment="Top" Margin="40,108,0,0"/>
+        <Button Content="移除綁定"  FontSize="30" Width="150" Click="UnRegBlueToothButton_Click" Height="60" VerticalAlignment="Top" Margin="195,108,0,0"/>
+        <Button Content="重新配對"  FontSize="30" Width="150" Click="RePairingButton_Click" Height="60" VerticalAlignment="Top" Margin="350,108,0,0"/>
+        <Button Name="RegBGServiceButton" IsEnabled="True" Content="啟用服務" VerticalAlignment="Top" FontSize="30" Width="150" Click="RegBGServiceButton_Click" Height="60" Margin="195,384,0,0"/>
+        <Button Name="UnRegBGServiceButton" IsEnabled="True" Content="解除服務" VerticalAlignment="Top" FontSize="30" Width="150" Click="UnRegBGServiceButton_Click" Height="60" Margin="350,384,0,0"/>
+        <TextBlock TextWrapping="Wrap" Text="啟用狀態：" Width="159" FontSize="30" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,339,0,0"/>
+        <TextBlock Name="RegBGServiceStatus" TextWrapping="Wrap" Text="未啟用" Width="120" FontSize="30" Height="40" Foreground="Red" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="160,339,0,0"/>
+        <TextBlock HorizontalAlignment="Left" TextWrapping="Wrap" Text="已綁定USB解鎖裝置：" Width="400" FontSize="30" VerticalAlignment="Top" Margin="1,173,0,0"/>
+        <ListBox x:Name="RegUSBDeviceList" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Top" Height="60" Margin="0,212,0,0"/>
+        <Button Content="綁定裝置" FontSize="30" Width="150" Click="RegUSBButton_Click" Height="60" VerticalAlignment="Top" Margin="40,277,0,0"/>
+        <Button Content="移除綁定"  FontSize="30" Width="150" Click="UnRegUSBButton_Click" Height="60" VerticalAlignment="Top" Margin="195,277,0,0"/>
+        <TextBlock HorizontalAlignment="Left" TextWrapping="Wrap" Text="解鎖模式：" Width="150" FontSize="30" VerticalAlignment="Top" Margin="12,444,0,0"/>
+        <ComboBox x:Name="UnLockTypesSwitch" Margin="181,450,0,0" Width="300" ItemsSource="{x:Bind unLockTypes}"/>
     </Grid>
 </Page>

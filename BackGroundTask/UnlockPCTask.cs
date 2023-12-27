@@ -1,22 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Windows.ApplicationModel.Background;
-using Windows.Data.Xml.Dom;
 using Windows.Security.Authentication.Identity.Provider;
 using Windows.Security.Cryptography.Core;
 using Windows.Security.Cryptography;
 using Windows.Storage.Streams;
-using Windows.UI.Notifications;
 using Windows.Devices.Bluetooth;
+using Windows.Storage;
+using UnLockMyPCLib;
+using Newtonsoft.Json;
+using Windows.Devices.Enumeration;
+using System.Diagnostics;
+
 
 namespace BackGroundTask
 {
     public sealed class UnlockPCTask : IBackgroundTask
     {
+        ApplicationDataContainer localSettings = Windows.Storage.ApplicationData.Current.LocalSettings;
         ManualResetEvent opCompletedEvent = null;
         public void Run(IBackgroundTaskInstance taskInstance)
         {
@@ -29,58 +32,127 @@ namespace BackGroundTask
         }
         async void PerformAuthentication()
         {
-            await SecondaryAuthenticationFactorAuthentication.ShowNotificationMessageAsync(
-                    "藍芽裝置",
-                    SecondaryAuthenticationFactorAuthenticationMessage.LookingForDevice);
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
 
-            var localSettings = Windows.Storage.ApplicationData.Current.LocalSettings;
-            String m_selectedDeviceId = localSettings.Values["SelectedDevice"] as String;
+            UnLockType unLockType =new UnLockType(unLockDeviceData.unLockTypeCode);
+            String notifyString= unLockType.TypeDescribe;
+
+            BluetoothDevice bluetoothdevice=null;
+            DeviceInformation usbdevice=null;
+            String bluetoothdeviceGUID = "";
+            String usbdeviceGUID = "";
+
+
+            switch (unLockType.TypeCode)
+            {
+                case UnLockTypeCode.BlueTooth:
+                    bluetoothdeviceGUID = unLockDeviceData.BlueToothDevice.GUID;
+                    bluetoothdevice = await BluetoothDevice.FromIdAsync(unLockDeviceData.BlueToothDevice.DeviceId);
+                    break;
+                case UnLockTypeCode.Usb:
+                    usbdeviceGUID = unLockDeviceData.USBDevice.GUID;
+                    usbdevice = await DeviceInformation.CreateFromIdAsync(unLockDeviceData.USBDevice.DeviceId);
+                    break;
+                case UnLockTypeCode.BlueToothOrUsb:
+                case UnLockTypeCode.BlueToothAndUsb:
+                    bluetoothdeviceGUID = unLockDeviceData.BlueToothDevice.GUID;
+                    usbdeviceGUID = unLockDeviceData.USBDevice.GUID;
+                    bluetoothdevice = await BluetoothDevice.FromIdAsync(unLockDeviceData.BlueToothDevice.DeviceId);
+                    usbdevice = await DeviceInformation.CreateFromIdAsync(unLockDeviceData.USBDevice.DeviceId);
+                    break;
+                default:
+                    return;
+            }
+            await SecondaryAuthenticationFactorAuthentication.ShowNotificationMessageAsync(
+                    notifyString,
+                    SecondaryAuthenticationFactorAuthenticationMessage.LookingForDevice);
 
             SecondaryAuthenticationFactorAuthenticationStageInfo authStageInfo = await SecondaryAuthenticationFactorAuthentication.GetAuthenticationStageInfoAsync();
 
             if (authStageInfo.Stage != SecondaryAuthenticationFactorAuthenticationStage.CollectingCredential)
             {
-                throw new Exception("Unexpected!");
+                return;
             }
+
 
             IReadOnlyList<SecondaryAuthenticationFactorInfo> deviceList = await SecondaryAuthenticationFactorRegistration.FindAllRegisteredDeviceInfoAsync(
                     SecondaryAuthenticationFactorDeviceFindScope.AllUsers);
 
             if (deviceList.Count == 0)
             {
-                throw new Exception("Unexpected exception, device list = 0");
+                return;
             }
-
-            int connectDeviceIndex = -1;
+            bool isbluetoothdeviceReg = false;
+            bool isbluetoothdeviceConnect = false;
+            bool isusbdeviceReg = false;
+            bool isusbdeviceConnect = false;
+            bool isbluetoothReadyUnlock = false;
+            bool isusbReadyUnlock = false;
+            bool isCanUnlock = false;
+            String unlockdeviceGUID = "";
 
             for (int index = 0; index < deviceList.Count; ++index)
             {
-                m_selectedDeviceId = deviceList.ElementAt(index).DeviceId;
-                var bluedevice = await BluetoothDevice.FromIdAsync("Bluetooth#Bluetooth" + m_selectedDeviceId.ToString());
-                if (bluedevice.ConnectionStatus == BluetoothConnectionStatus.Connected) {
-                    connectDeviceIndex = index;
-                    break;
+                
+                if (deviceList.ElementAt(index).DeviceId.Equals(usbdeviceGUID))
+                {
+                    isusbdeviceReg = usbdevice.Properties["System.Devices.ContainerId"].ToString().Equals(unLockDeviceData.USBDevice.ContainerId);
+                    isusbdeviceConnect = (bool)usbdevice.Properties["System.Devices.InterfaceEnabled"];
+                }
+                if (deviceList.ElementAt(index).DeviceId.Equals(bluetoothdeviceGUID))
+                {
+                    isbluetoothdeviceReg = true;
+                    isbluetoothdeviceConnect = bluetoothdevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
                 }
             }
-            if (connectDeviceIndex == -1)
+            isbluetoothReadyUnlock = (isbluetoothdeviceReg && isbluetoothdeviceConnect);
+            isusbReadyUnlock = (isusbdeviceReg && isusbdeviceConnect);
+
+
+            switch (unLockType.TypeCode)
+            {
+                case UnLockTypeCode.BlueTooth:
+                    isCanUnlock = isbluetoothReadyUnlock;
+                    unlockdeviceGUID = bluetoothdeviceGUID;
+                    break;
+                case UnLockTypeCode.Usb:
+                    isCanUnlock = isusbReadyUnlock;
+                    unlockdeviceGUID = usbdeviceGUID;
+                    break;
+                case UnLockTypeCode.BlueToothOrUsb:
+                    isCanUnlock = (isbluetoothReadyUnlock || isusbReadyUnlock);
+                    if (isbluetoothReadyUnlock) {
+                        unlockdeviceGUID = bluetoothdeviceGUID;
+                    }
+                    else {
+                        unlockdeviceGUID = usbdeviceGUID;
+                    }
+                    break;
+                case UnLockTypeCode.BlueToothAndUsb:
+                    isCanUnlock = (isbluetoothReadyUnlock && isusbReadyUnlock);
+                    unlockdeviceGUID = bluetoothdeviceGUID;
+                    break;
+                default:
+                    return;
+            }
+
+            if (!isCanUnlock)
             {
                 await SecondaryAuthenticationFactorAuthentication.ShowNotificationMessageAsync(
-                    "藍芽裝置",
+                   notifyString,
                     SecondaryAuthenticationFactorAuthenticationMessage.DeviceUnavailable);
                 return;
             }
 
-            SecondaryAuthenticationFactorInfo deviceInfo = deviceList.ElementAt(0);
-            m_selectedDeviceId = deviceInfo.DeviceId;
-
             IBuffer svcNonce = CryptographicBuffer.GenerateRandom(32);  //Generate a nonce and do a HMAC operation with the nonce
 
             SecondaryAuthenticationFactorAuthenticationResult authResult = await SecondaryAuthenticationFactorAuthentication.StartAuthenticationAsync(
-                    m_selectedDeviceId, svcNonce);
+                    unlockdeviceGUID, svcNonce);
 
             if (authResult.Status != SecondaryAuthenticationFactorAuthenticationStatus.Started)
             {
-                throw new Exception("Unexpected! Could not start authentication!");
+                return;
             }
 
             //
@@ -140,21 +212,29 @@ namespace BackGroundTask
 
             if (authStatus != SecondaryAuthenticationFactorFinishAuthenticationStatus.Completed)
             {
-                throw new Exception("Unable to complete authentication!");
+                return;
             }
         }
         async void OnStageChanged(Object sender, SecondaryAuthenticationFactorAuthenticationStageChangedEventArgs args)
         {
+            Object value = localSettings.Values["UnLockDeviceData"];
+            UnLockDeviceData unLockDeviceData = JsonConvert.DeserializeObject<UnLockDeviceData>(value.ToString());
+
+            UnLockType unLockType = new UnLockType(unLockDeviceData.unLockTypeCode);
+            String notifyString = unLockType.TypeDescribe;
             if (args.StageInfo.Stage == SecondaryAuthenticationFactorAuthenticationStage.WaitingForUserConfirmation)
             {
-                String deviceName = "藍芽裝置";
                 await SecondaryAuthenticationFactorAuthentication.ShowNotificationMessageAsync(
-                    deviceName,
+                    notifyString,
                     SecondaryAuthenticationFactorAuthenticationMessage.SwipeUpWelcome);
             }
             else if (args.StageInfo.Stage == SecondaryAuthenticationFactorAuthenticationStage.CollectingCredential)
             {
-                PerformAuthentication();
+                try {
+                    PerformAuthentication();
+                }catch(Exception e) {
+                    Debug.WriteLine("Exception:"+e.StackTrace);
+                }
             }
             else
             {

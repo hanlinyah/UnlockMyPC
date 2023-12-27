@@ -54,6 +54,6 @@
 
   <Capabilities>
 	<rescap:Capability Name="secondaryAuthenticationFactor" />
-	<DeviceCapability Name="bluetooth"/>
+	  <DeviceCapability Name="bluetooth"/>
   </Capabilities>
 </Package>
